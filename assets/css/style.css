@@ -1,0 +1,401 @@
+/* Import Google Fonts */
+@import url('https://fonts.googleapis.com/css2?family=Poppins:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Roboto:ital,wght@0,100..900;1,100..900&display=swap');
+
+*,
+::after,
+::before {
+    box-sizing: border-box;
+}
+
+/* .toplevel_page_seo-setup #wpcontent {
+    padding-left: 0px;
+} */
+
+#seo-setup-container {
+    max-width: 1300px;
+    width: 100%;
+    padding: 30px;
+    margin: 30px auto;
+    background-color: #fff;
+    font-family: "Roboto", serif;
+    color: #49454f;
+    font-size: 14px;
+}
+
+.seo-setup-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.seo-setup-content-area {
+    margin: 20px 0;
+    display: flex;
+}
+
+.seo-setup-side-navigation {
+    width: 25%;
+    border-right: #e8eaed solid 1px;
+    padding-right: 25px;
+}
+
+.seo-setup-tab-content {
+    width: 75%;
+}
+
+.seo-setup-content-tabs {
+    padding-left: 20px;
+}
+
+/* FIXED: Scoped to plugin container only - was globally resetting all h2, p margins */
+#seo-setup-container h2,
+#seo-setup-container p {
+    margin-top: 0;
+}
+
+.seo-setup-tab-buttons {
+    border: 1px solid #e0e5f2;
+    margin-bottom: 5px;
+    padding: 15px 10px 15px 30px;
+    border-radius: 0 35px 35px 0px;
+    display: block;
+    width: 100%;
+    cursor: pointer;
+    color: #49454f;
+    font-weight: 500;
+    font-family: "Roboto", serif;
+    font-size: 14px;
+    border: 0;
+    text-align: left;
+    background-color: transparent;
+}
+
+/* ALt text buttons*/
+
+div#setup-alt-text-buttons {
+    display: flex
+;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    align-content: center;
+    align-items: flex-start;
+}
+
+#setup-alt-text-buttons button:hover,
+#seo-setup-page-names-button:hover,
+#seo-setup-generate-meta-button:hover,
+#set-featured-images-btn:hover,
+#update-open-graphs-btn:hover,
+#generate-canonical-urls:hover,
+#seo-setup-generate-xml-sitemap-btn:hover,
+#seo-setup-generate-image-sitemap-btn:hover,
+#seo-setup-generate-robots-txt-btn:hover,
+.seo-setup-schema-buttons #seo-setup-generate-org-schema:hover,
+.seo-setup-schema-buttons #seo-setup-generate-local-schema:hover {
+    box-shadow: 0 4px 8px 0 rgba(26, 115, 232, 0.4),  0 6px 20px 0 rgba(26, 115, 232, 0.2);
+}
+
+/* Active tab highlight */
+.seo-setup-tab-buttons.seo-setup-current {
+    background-color: #e8f0fe;
+    color: #1a73e8;
+}
+
+.seo-setup-cta-button,
+button#batch-update-meta,
+button#download-meta,
+.seo-setup-save-btn {
+    background-color: #1a73e8;
+    border-radius: 100px;
+    color: #fff;
+    padding: 10px 20px;
+    font-weight: 500;
+    border: 0;
+    margin-bottom: 20px;
+    cursor: pointer;
+}
+
+.seo-setup-d-flex {
+    display: flex;
+    align-items: center;
+}
+
+.seo-setup-write-mark {
+    margin-right: 10px;
+}
+
+.seo-setup-disabled-button {
+    background: var(--State-Layers-On-Surface-Opacity-12, #1d1b201f);
+    margin-bottom: 5px;
+    color: #1d1b20;
+    cursor: default;
+    opacity: 0.6;
+}
+
+.seo-setup-footer {
+    font-weight: 300;
+    color: rgba(0, 0, 0, 0.7);
+    text-align: right;
+}
+
+.seo-setup-content-title {
+    font-size: 22px;
+    font-weight: 400;
+}
+
+/* Hide all tab sections by default */
+.seo-setup-tab-content-show {
+    display: none;
+}
+
+/* Show only the tab section that has .seo-setup-current */
+.seo-setup-tab-content-show.seo-setup-current {
+    display: block;
+}
+
+/* Keep generated-content hidden until a CTA button reveals it */
+.seo-setup-generated-content {
+    display: none;
+}
+
+.seo-setup-tab-sub-content {
+    /* if you need custom styling for sub-content, place it here */
+}
+
+/* Progress Bar */
+
+#progress-bar {
+    width: 100%;
+    background-color: #f3f3f3;
+    border: 1px solid #ccc;
+    height: 20px;
+    margin-top: 20px;
+    border-radius: 5px;
+    overflow: hidden;
+}
+
+.progress-bar-fill {
+    height: 100%;
+    background-color: #4caf50;
+    width: 0;
+    transition: width 0.3s ease-in-out;
+}
+
+#progress-message {
+    font-weight: bold;
+    margin-top: 10px;
+    color: #333;
+}
+
+#jq-ui-progressbar,
+#schema-jq-ui-progressbar {
+    border-radius: 50px;
+    overflow: hidden;
+}
+
+#jq-ui-progressbar .ui-progressbar-value,
+#schema-jq-ui-progressbar .ui-progressbar-value {
+    background-color: #1a73e8 !important;
+    border-radius: 50px;
+}
+
+/* Schema Buttons */
+.seo-setup-schema-buttons {
+    display: flex;
+    flex-direction: row;
+    align-content: center;
+    justify-content: flex-start;
+    align-items: flex-start;
+}
+.seo-setup-schema-buttons button#seo-setup-generate-local-schema {
+    margin-left: 5px;
+}
+
+/* Canonicals */
+
+.canonical-tags-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 20px;
+}
+
+.canonical-tags-table th {
+    text-align: left;
+    padding: 8px;
+}
+
+.canonical-tags-table td {
+    padding: 8px;
+    vertical-align: middle;
+}
+
+.canonical-tags-table .id-column {
+    width: 60px;
+}
+
+.canonical-tags-table .title-column {
+    width: 20%;
+}
+
+.canonical-tags-table .status-column {
+    width: 100px;
+}
+
+.canonical-tags-table .canonical-url-column {
+    width: auto;
+}
+
+.canonical-tags-table .actions-column {
+    width: 100px;
+    text-align: center;
+}
+
+.edit-form {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.canonical-input {
+    flex: 1;
+    padding: 5px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+}
+
+.updating {
+    margin-left: 10px;
+    color: #666;
+}
+
+/* Success and Error notices */
+.notice {
+    padding: 8px;
+    margin: 5px 0;
+    border-radius: 4px;
+}
+
+.notice-success {
+    background-color: #dff0d8;
+    border: 1px solid #d6e9c6;
+    color: #3c763d;
+}
+
+.notice-error {
+    background-color: #f2dede;
+    border: 1px solid #ebccd1;
+    color: #a94442;
+}
+
+/* 301 Redirects */
+
+.container-301 {
+    /* width: 600px; */
+}
+
+.container-301 .button-contener{
+    display: flex;
+    flex-direction: column;
+    align-items: left;
+}
+.container-301 .header {
+    font-size: 18px;
+    font-weight: bold;
+    margin-bottom: 20px;
+    text-align: left;
+}
+
+.container-301 .input-group {
+    margin-bottom: 20px;
+}
+
+.container-301 .input-group label {
+    font-size: 16px;
+    margin-bottom: 5px;
+    display: block;
+}
+
+.container-301 .input-group input {
+    width: 100%;
+    padding: 10px;
+    font-size: 16px;
+    border: 1px solid #ccc;
+    border-radius: 5px;
+}
+
+.auto-map-btn {
+    /* background-color: #ff5757; */
+    /* color: white;
+    border: none;
+    padding: 10px 20px;
+    font-size: 16px;
+    cursor: pointer;
+    border-radius: 5px; */
+    width: 200px;
+    /* margin-top: 10px; */
+}
+
+.auto-map-btn:hover {
+    background-color: #ff4343;
+}
+
+.container-301 .redirect-suggestions {
+    margin-top: 30px;
+    display: none;
+}
+
+.container-301 .redirect-suggestions table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 10px;
+}
+
+.container-301 .redirect-suggestions th,.container-301 .redirect-suggestions td {
+    padding: 12px;
+    text-align: left;
+    border-bottom: 1px solid #ddd;
+}
+
+.container-301 .redirect-suggestions th {
+    background-color: #f1f1f1;
+}
+
+.container-301 .editable {
+    background-color: #fff;
+    border: 1px solid #ccc;
+    padding: 8px;
+    width: 100%;
+    border-radius: 5px;
+}
+
+.container-301 .status-active {
+    color: green;
+}
+
+.container-301 .status-inactive {
+    color: red;
+}
+
+.container-301 #save_redirection{
+    margin-top: 20px;
+}
+
+.container-301 a.plus-input {
+    /* margin-top: 10px;
+    margin-right: 10px; */ 
+    display: none;
+    padding: 8px 12px;
+    border: 1px solid;
+}
+
+.container-301 a.minus-input{
+    padding: 8px 15px;
+    border: 1px solid;
+}
+
+.container-301 .input-box-td {
+    display: flex;
+    flex-direction: row;
+    gap: 10px;
+    align-items: center;
+}

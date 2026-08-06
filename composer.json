@@ -1,0 +1,13 @@
+{
+    "require": {
+        "php": ">=7.0.8",
+        "commerceguys/addressing": "1.0.7",
+        "giggsey/libphonenumber-for-php": "8.12.5",
+        "giggsey/locale": "1.9.0"
+    },
+    "config": {
+        "platform": {
+            "php": "7.0.8"
+        }
+    }
+}
