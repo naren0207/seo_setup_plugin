@@ -5,8 +5,10 @@
  * "Analyze Image Alt Text" — audits EXISTING alt text using Gemini 2.5 Flash
  * vision (unlike generate-alt-text.php, which only fills in MISSING alt text).
  * For each image, Gemini is shown the image itself plus its current alt text
- * and asked whether the alt text is fully suitable; if not, Gemini returns an
- * 8-word English replacement.
+ * and asked whether the alt text is acceptable (lenient — a broad but
+ * accurate description passes; only genuine problems are flagged). If not
+ * suitable, Gemini returns an 8-10 word English replacement, or flags the
+ * image as purely decorative (alt text gets cleared instead of replaced).
  *
  * Results are tracked per-attachment in a custom table so that re-running the
  * audit on a later visit (e.g. the same site coming back next month) skips
@@ -38,18 +40,31 @@ define( 'SEO_SETUP_GEMINI_ENDPOINT', 'https://generativelanguage.googleapis.com/
 // Table creation
 // ============================================================================
 
+// Bump this whenever the table schema below changes — the admin_init hook
+// re-runs dbDelta (safe/idempotent, only ALTERs what's actually different)
+// when the stored version doesn't match, so existing installs get migrated.
+define( 'SEO_SETUP_ALT_TEXT_ANALYSIS_TABLE_VERSION', '1.1' );
+
 function seo_setup_create_alt_text_analysis_table() {
     global $wpdb;
     $table_name = $wpdb->prefix . 'seo_setup_alt_text_analysis';
     $charset_collate = $wpdb->get_charset_collate();
 
-    $sql = "CREATE TABLE IF NOT EXISTS $table_name (
+    // FIXED: dbDelta() cannot reliably detect/apply column changes on an
+    // existing table when the SQL uses "CREATE TABLE IF NOT EXISTS" — this
+    // is a documented dbDelta gotcha, confirmed by testing: the same SQL
+    // without "IF NOT EXISTS" correctly ALTERs in the missing column, but
+    // with it dbDelta silently does nothing. Plain "CREATE TABLE" is safe
+    // either way since dbDelta itself checks existence before deciding
+    // whether to CREATE or ALTER.
+    $sql = "CREATE TABLE $table_name (
         id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
         attachment_id BIGINT UNSIGNED NOT NULL,
         image_url TEXT NOT NULL,
         original_alt_text TEXT NULL,
         last_known_alt_text TEXT NULL,
         is_suitable TINYINT(1) NOT NULL DEFAULT 0,
+        is_decorative TINYINT(1) NOT NULL DEFAULT 0,
         suggested_alt_text TEXT NULL,
         status VARCHAR(20) NOT NULL DEFAULT 'analyzed',
         analyzed_at DATETIME NOT NULL,
@@ -59,15 +74,15 @@ function seo_setup_create_alt_text_analysis_table() {
 
     require_once ABSPATH . 'wp-admin/includes/upgrade.php';
     dbDelta( $sql );
+
+    update_option( 'seo_setup_alt_text_analysis_table_version', SEO_SETUP_ALT_TEXT_ANALYSIS_TABLE_VERSION );
 }
 // FIXED (same rationale as the redirects table): register_activation_hook won't
 // fire from a file that's require_once'd from the main plugin file, so this is
-// also created as a safe admin_init fallback in addition to the activation call
-// in seo-setup.php.
+// also created/migrated as a safe admin_init fallback in addition to the
+// activation call in seo-setup.php.
 add_action( 'admin_init', function() {
-    global $wpdb;
-    $table_name = $wpdb->prefix . 'seo_setup_alt_text_analysis';
-    if ( $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $table_name ) ) !== $table_name ) {
+    if ( get_option( 'seo_setup_alt_text_analysis_table_version' ) !== SEO_SETUP_ALT_TEXT_ANALYSIS_TABLE_VERSION ) {
         seo_setup_create_alt_text_analysis_table();
     }
 } );
@@ -153,25 +168,25 @@ function seo_setup_get_eligible_images_for_analysis() {
 // ============================================================================
 
 /**
- * Ask Gemini whether $current_alt is a suitable alt text for the image at
- * $img_url, and get an 8-word replacement if not.
+ * Ask Gemini whether $current_alt is acceptable for the image at $img_url,
+ * and get a replacement if not (or a decorative flag if the image carries
+ * no informational content).
  *
- * @return array|false  ['is_suitable' => bool, 'suggested_alt_text' => string] or false on failure.
+ * @return array|false  ['is_suitable' => bool, 'is_decorative' => bool, 'suggested_alt_text' => string] or false on failure.
  */
 function seo_setup_analyze_image_with_gemini( $img_url, $current_alt, $credentials ) {
     $api_url = $credentials['endpoint'];
     $api_key = $credentials['key'];
 
-    $prompt = "You are an accessibility and SEO expert. Judge whether the CURRENT ALT TEXT below is fully suitable for the attached image.\n\n"
+    $prompt = "Evaluate whether this image's existing HTML alt text is acceptable, not whether a better, more detailed, or more polished description could be written. Preserve valid alt text.\n\n"
         . 'Current alt text: "' . $current_alt . "\"\n\n"
-        . "The alt text is suitable ONLY if ALL of the following are true:\n"
-        . "1. It accurately and specifically describes what is actually shown in this exact image.\n"
-        . "2. It is concise — no more than 8 words.\n"
-        . "3. It is written in natural English only.\n"
-        . "4. It does not start with filler like \"image of\" or \"picture of\".\n"
-        . "5. It is not empty, generic, a filename, or keyword-stuffed.\n\n"
-        . "If ALL conditions are met, set is_suitable to true and suggested_alt_text to an empty string.\n"
-        . "If ANY condition fails, set is_suitable to false and suggested_alt_text to a new, accurate alt text for this exact image — no more than 8 words, English only, no filler words like \"image of\".";
+        . "Set is_suitable to false only when the existing text is clearly unrelated to the image, factually incorrect or materially misleading, placeholder/test content, a meaningless filename or ID, keyword-stuffed or spam-like, or so generic that it does not identify the main subject. A broad but accurate description is suitable. Missing secondary objects, colors, weather, background details, or additional specificity does not make it unsuitable. When uncertain, set is_suitable to true.\n\n"
+        . "Before setting is_suitable to false, verify that this statement can be completed with a factual problem: \"The current alt text is materially wrong because ...\". If it cannot, set is_suitable to true.\n\n"
+        . "If suitable, return an empty suggested_alt_text. If clearly unsuitable, provide a replacement written in English only, using 8 to 10 words (never fewer than 8), within 125 characters.\n\n"
+        . "If the image is purely decorative (carries no informational content — e.g. a spacer, divider, or background texture), set is_decorative to true, is_suitable to false, and return an empty suggested_alt_text.\n\n"
+        . "Examples:\n"
+        . "- Image: terraced rice fields, trees, mist, and a hut. Current alt text: \"Lush green terraced hills and trees\". Result: is_suitable=true, because it is broad but factually accurate and the omitted details are secondary.\n"
+        . "- Image: a man taking a selfie on an airplane. Current alt text: \"Abc Testing web\". Result: is_suitable=false, because it is placeholder text unrelated to the image.";
 
     $parts     = array( array( 'text' => $prompt ) );
     $mime_type = wp_check_filetype( $img_url )['type'];
@@ -201,10 +216,20 @@ function seo_setup_analyze_image_with_gemini( $img_url, $current_alt, $credentia
             'responseSchema'   => array(
                 'type'       => 'OBJECT',
                 'properties' => array(
-                    'is_suitable'        => array( 'type' => 'BOOLEAN' ),
-                    'suggested_alt_text' => array( 'type' => 'STRING' ),
+                    'is_suitable'        => array(
+                        'type'        => 'BOOLEAN',
+                        'description' => 'True if the existing alt text is an acceptable, factually accurate description of the image, even if broad or lacking secondary detail. False only for a genuine, nameable factual problem.',
+                    ),
+                    'is_decorative'      => array(
+                        'type'        => 'BOOLEAN',
+                        'description' => 'True only if the image is purely decorative and carries no informational content (e.g. spacer, divider, background texture). False for any image with a real subject.',
+                    ),
+                    'suggested_alt_text' => array(
+                        'type'        => 'STRING',
+                        'description' => 'Empty string if is_suitable is true or is_decorative is true. Otherwise a complete, grammatical replacement of 8 to 10 words (never fewer than 8), within 125 characters, English only, describing this exact image — never cut off mid-phrase.',
+                    ),
                 ),
-                'required'   => array( 'is_suitable', 'suggested_alt_text' ),
+                'required'   => array( 'is_suitable', 'is_decorative', 'suggested_alt_text' ),
             ),
         ),
     );
@@ -247,16 +272,17 @@ function seo_setup_analyze_image_with_gemini( $img_url, $current_alt, $credentia
 
     $suggested = isset( $parsed['suggested_alt_text'] ) ? sanitize_text_field( trim( $parsed['suggested_alt_text'] ) ) : '';
 
-    // Server-side guard on the word cap, in case the model overshoots.
-    if ( ! empty( $suggested ) ) {
-        $words = preg_split( '/\s+/', $suggested );
-        if ( count( $words ) > 8 ) {
-            $suggested = implode( ' ', array_slice( $words, 0, 8 ) );
-        }
+    // Never hard-truncate — cutting a suggestion off mid-phrase (e.g.
+    // "...under blue" missing "sky") is worse than a slightly-over-target
+    // length. The prompt already targets 8-10 words / 125 characters; this
+    // is just a log-only backstop against a genuinely runaway response.
+    if ( ! empty( $suggested ) && ( strlen( $suggested ) > 200 || str_word_count( $suggested ) > 20 ) ) {
+        error_log( '[SEO Setup] Gemini alt text analysis: suggestion far exceeds target length, using as-is: ' . $suggested );
     }
 
     return array(
         'is_suitable'        => (bool) $parsed['is_suitable'],
+        'is_decorative'      => ! empty( $parsed['is_decorative'] ),
         'suggested_alt_text' => $suggested,
     );
 }
@@ -326,16 +352,18 @@ function seo_setup_alt_text_analysis_process_batch() {
         }
 
         $is_suitable        = $verdict['is_suitable'];
+        $is_decorative      = $verdict['is_decorative'];
         $suggested_alt_text = $is_suitable ? '' : $verdict['suggested_alt_text'];
 
         $wpdb->query( $wpdb->prepare(
             "INSERT INTO $table_name
-                (attachment_id, image_url, original_alt_text, last_known_alt_text, is_suitable, suggested_alt_text, status, analyzed_at, fixed_at)
-             VALUES (%d, %s, %s, %s, %d, %s, 'analyzed', %s, NULL)
+                (attachment_id, image_url, original_alt_text, last_known_alt_text, is_suitable, is_decorative, suggested_alt_text, status, analyzed_at, fixed_at)
+             VALUES (%d, %s, %s, %s, %d, %d, %s, 'analyzed', %s, NULL)
              ON DUPLICATE KEY UPDATE
                 image_url = VALUES(image_url),
                 last_known_alt_text = VALUES(last_known_alt_text),
                 is_suitable = VALUES(is_suitable),
+                is_decorative = VALUES(is_decorative),
                 suggested_alt_text = VALUES(suggested_alt_text),
                 status = 'analyzed',
                 analyzed_at = VALUES(analyzed_at),
@@ -345,6 +373,7 @@ function seo_setup_alt_text_analysis_process_batch() {
             $current_alt,
             $current_alt,
             $is_suitable ? 1 : 0,
+            $is_decorative ? 1 : 0,
             $suggested_alt_text,
             current_time( 'mysql' )
         ) );
@@ -358,6 +387,7 @@ function seo_setup_alt_text_analysis_process_batch() {
                 'image_url'          => $image_url,
                 'current_alt'        => $current_alt,
                 'suggested_alt_text' => $suggested_alt_text,
+                'is_decorative'      => $is_decorative,
             );
         }
     }
@@ -393,7 +423,7 @@ function seo_setup_alt_text_analysis_fix() {
     $limit = isset( $_POST['limit'] ) ? max( 1, absint( $_POST['limit'] ) ) : SEO_SETUP_BATCH_SIZE;
 
     $pending = $wpdb->get_results( $wpdb->prepare(
-        "SELECT id, attachment_id, suggested_alt_text FROM $table_name
+        "SELECT id, attachment_id, suggested_alt_text, is_decorative FROM $table_name
          WHERE status = 'analyzed' AND is_suitable = 0
          ORDER BY id ASC LIMIT %d",
         $limit
@@ -402,6 +432,30 @@ function seo_setup_alt_text_analysis_fix() {
     $fixed_items = array();
 
     foreach ( $pending as $row ) {
+        if ( $row->is_decorative ) {
+            // Decorative images should carry empty alt text so screen readers
+            // skip them — that IS the fix here, distinct from "nothing to apply".
+            // Title is left untouched; it's not part of what "decorative" means.
+            update_post_meta( $row->attachment_id, '_wp_attachment_image_alt', '' );
+
+            $wpdb->update(
+                $table_name,
+                array(
+                    'status'              => 'fixed',
+                    'last_known_alt_text' => '',
+                    'fixed_at'            => current_time( 'mysql' ),
+                ),
+                array( 'id' => $row->id )
+            );
+
+            $fixed_items[] = array(
+                'attachment_id' => $row->attachment_id,
+                'alt_text'      => '',
+                'decorative'    => true,
+            );
+            continue;
+        }
+
         if ( empty( $row->suggested_alt_text ) ) {
             // Nothing usable to apply — mark resolved anyway so it doesn't loop forever.
             $wpdb->update(
@@ -431,6 +485,7 @@ function seo_setup_alt_text_analysis_fix() {
         $fixed_items[] = array(
             'attachment_id' => $row->attachment_id,
             'alt_text'      => $row->suggested_alt_text,
+            'decorative'    => false,
         );
     }
 

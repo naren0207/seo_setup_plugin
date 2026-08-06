@@ -65,10 +65,14 @@ jQuery(document).ready(function ($) {
             '</tr></thead><tbody>';
 
         unsuitableItems.forEach(function (item) {
+            var suggestedDisplay = item.is_decorative
+                ? '<em>(decorative — alt text will be cleared)</em>'
+                : escapeHtml(item.suggested_alt_text);
+
             html += '<tr>' +
                 '<td style="border:1px solid #ddd; padding:8px;"><a href="' + item.image_url + '" target="_blank">' + escapeHtml(item.image_url) + '</a></td>' +
                 '<td style="border:1px solid #ddd; padding:8px;">' + (item.current_alt ? escapeHtml(item.current_alt) : '<em>(empty)</em>') + '</td>' +
-                '<td style="border:1px solid #ddd; padding:8px;">' + escapeHtml(item.suggested_alt_text) + '</td>' +
+                '<td style="border:1px solid #ddd; padding:8px;">' + suggestedDisplay + '</td>' +
                 '</tr>';
         });
 
