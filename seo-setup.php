@@ -40,6 +40,7 @@ require_once SEO_SETUP_PLUGIN_DIR . 'inc/error-log.php';
 require_once SEO_SETUP_PLUGIN_DIR . 'inc/enqueue.php';
 require_once SEO_SETUP_PLUGIN_DIR . 'inc/admin-menu.php';
 require_once SEO_SETUP_PLUGIN_DIR . 'inc/generate-alt-text.php';
+require_once SEO_SETUP_PLUGIN_DIR . 'inc/analyze-alt-text.php';
 require_once SEO_SETUP_PLUGIN_DIR . 'inc/page-names.php';
 require_once SEO_SETUP_PLUGIN_DIR . 'inc/focus-keyword.php';
 require_once SEO_SETUP_PLUGIN_DIR . 'inc/featured-image.php';
@@ -69,6 +70,11 @@ function seo_setup_plugin_activate() {
 	// Create redirects table — this is a database operation, always safe.
 	if ( function_exists( 'seo_setup_create_redirect_table' ) ) {
 		seo_setup_create_redirect_table();
+	}
+
+	// Create alt text analysis tracking table — also a safe database operation.
+	if ( function_exists( 'seo_setup_create_alt_text_analysis_table' ) ) {
+		seo_setup_create_alt_text_analysis_table();
 	}
 
 	// FIXED: Removed all MU plugin file creation from here:

@@ -159,3 +159,72 @@ function seo_setup_safe_dom_load($html) {
     libxml_clear_errors();
     return $dom;
 }
+
+/**
+ * Fetch a remote image and return it as base64-encoded JPEG data, resized to
+ * fit within 512x512. Used for vision API calls (alt text generation and
+ * alt text analysis).
+ *
+ * @param string $img_url
+ * @return array|false  ['base64' => ..., 'mime' => 'image/jpeg'] or false on failure.
+ */
+function seo_setup_fetch_and_resize_image_base64( $img_url ) {
+    $image_response = wp_remote_get( $img_url );
+    if ( is_wp_error( $image_response ) || empty( $image_response['body'] ) ) {
+        return false;
+    }
+
+    // FIXED: wp_tempnam() lives in wp-admin/includes/file.php, which is not
+    // guaranteed to be loaded on the REST API request path (only reliably
+    // auto-loaded for true wp-admin/admin-ajax.php requests).
+    if ( ! function_exists( 'wp_tempnam' ) ) {
+        require_once ABSPATH . 'wp-admin/includes/file.php';
+    }
+
+    $tmp_path = wp_tempnam( $img_url );
+    if ( ! $tmp_path ) {
+        return false;
+    }
+
+    file_put_contents( $tmp_path, $image_response['body'] );
+    $mime = mime_content_type( $tmp_path );
+
+    $create_func = array(
+        'image/jpeg' => 'imagecreatefromjpeg',
+        'image/png'  => 'imagecreatefrompng',
+        'image/webp' => 'imagecreatefromwebp',
+    );
+
+    if ( empty( $create_func[ $mime ] ) || ! function_exists( $create_func[ $mime ] ) ) {
+        @unlink( $tmp_path );
+        return false;
+    }
+
+    $img = @$create_func[ $mime ]( $tmp_path );
+    @unlink( $tmp_path );
+    if ( ! $img ) {
+        return false;
+    }
+
+    $width  = imagesx( $img );
+    $height = imagesy( $img );
+    $scale  = min( 512 / $width, 512 / $height, 1 );
+
+    $new_w = (int) ( $width * $scale );
+    $new_h = (int) ( $height * $scale );
+
+    $resized = imagecreatetruecolor( $new_w, $new_h );
+    imagecopyresampled( $resized, $img, 0, 0, 0, 0, $new_w, $new_h, $width, $height );
+
+    ob_start();
+    imagejpeg( $resized, null, 85 );
+    $base64 = base64_encode( ob_get_clean() );
+
+    imagedestroy( $img );
+    imagedestroy( $resized );
+
+    return array(
+        'base64' => $base64,
+        'mime'   => 'image/jpeg',
+    );
+}

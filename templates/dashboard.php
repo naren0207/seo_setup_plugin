@@ -20,7 +20,8 @@
             <button class="seo-setup-tab-buttons seo-setup-sidebar-tab-button" onclick="showPage(7)">Image Sitemap</button>
             <button class="seo-setup-tab-buttons seo-setup-sidebar-tab-button" onclick="showPage(8)">Robots.txt</button>
             <button class="seo-setup-tab-buttons seo-setup-sidebar-tab-button" onclick="showPage(9)">Schema Markup</button>
-        </aside> 
+            <button class="seo-setup-tab-buttons seo-setup-sidebar-tab-button" onclick="showPage(10)">Analyze Image Alt Text</button>
+        </aside>
         <div class="seo-setup-tab-content">
             <section class="seo-setup-content-tabs">
                 <article class="seo-setup-tab-content-show seo-setup-current">
@@ -128,6 +129,19 @@
                             Schema Markup Added
                         </p>
                     </section>
+                </article>
+
+                <article class="seo-setup-tab-content-show">
+                    <h2 class="seo-setup-content-title">Analyze Image Alt Text</h2>
+                    <p>Sends each image's current alt text, along with the image itself, to Gemini to judge whether it is fully suitable. Unsuitable alt text gets an 8-word suggested replacement you can apply in bulk. Images already analyzed or fixed on a prior visit are skipped automatically unless their alt text has changed since.</p>
+
+                    <button class="seo-setup-cta-button" id="seo-setup-analyze-alt-text-button">Analyze Alt Text</button>
+                    <div id="seo-setup-analyze-alt-text-progress" style="margin-top:15px; display:none;"></div>
+                    <div id="seo-setup-analyze-alt-text-summary" style="margin-top:10px;"></div>
+                    <div id="seo-setup-analyze-alt-text-table"></div>
+
+                    <button class="seo-setup-cta-button" id="seo-setup-fix-alt-text-button" style="display:none; margin-top:15px;">Fix Image Alt Text</button>
+                    <div id="seo-setup-fix-alt-text-results" style="margin-top:15px;"></div>
                 </article>
             </section>
         </div>

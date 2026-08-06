@@ -61,6 +61,33 @@ function seo_setup_register_rest_routes() {
     ) );
 
     // -----------------------------------------------------------------------
+    // Alt Text Analysis (Gemini-powered audit of EXISTING alt text)
+    // -----------------------------------------------------------------------
+    register_rest_route( $namespace, '/alt-text-analysis/start-audit', array(
+        'methods'             => 'POST',
+        'callback'            => 'seo_setup_rest_alt_text_analysis_start_audit',
+        'permission_callback' => 'seo_setup_rest_permission_upload_files',
+    ) );
+
+    register_rest_route( $namespace, '/alt-text-analysis/process-batch', array(
+        'methods'             => 'POST',
+        'callback'            => 'seo_setup_rest_alt_text_analysis_process_batch',
+        'permission_callback' => 'seo_setup_rest_permission_upload_files',
+    ) );
+
+    register_rest_route( $namespace, '/alt-text-analysis/fix', array(
+        'methods'             => 'POST',
+        'callback'            => 'seo_setup_rest_alt_text_analysis_fix',
+        'permission_callback' => 'seo_setup_rest_permission_upload_files',
+    ) );
+
+    register_rest_route( $namespace, '/alt-text-analysis/pending-count', array(
+        'methods'             => 'POST',
+        'callback'            => 'seo_setup_rest_alt_text_analysis_pending_count',
+        'permission_callback' => 'seo_setup_rest_permission_upload_files',
+    ) );
+
+    // -----------------------------------------------------------------------
     // Page Names
     // -----------------------------------------------------------------------
     register_rest_route( $namespace, '/page-names/update', array(
@@ -354,6 +381,32 @@ function seo_setup_rest_alt_text_report_data( $request ) {
     seo_setup_rest_populate_post( $request );
     add_filter( 'wp_doing_ajax', '__return_true' );
     seo_setup_get_alt_text_report_data();
+}
+
+// --- Alt Text Analysis ---
+
+function seo_setup_rest_alt_text_analysis_start_audit( $request ) {
+    seo_setup_rest_populate_post( $request );
+    add_filter( 'wp_doing_ajax', '__return_true' );
+    seo_setup_alt_text_analysis_start_audit();
+}
+
+function seo_setup_rest_alt_text_analysis_process_batch( $request ) {
+    seo_setup_rest_populate_post( $request );
+    add_filter( 'wp_doing_ajax', '__return_true' );
+    seo_setup_alt_text_analysis_process_batch();
+}
+
+function seo_setup_rest_alt_text_analysis_fix( $request ) {
+    seo_setup_rest_populate_post( $request );
+    add_filter( 'wp_doing_ajax', '__return_true' );
+    seo_setup_alt_text_analysis_fix();
+}
+
+function seo_setup_rest_alt_text_analysis_pending_count( $request ) {
+    seo_setup_rest_populate_post( $request );
+    add_filter( 'wp_doing_ajax', '__return_true' );
+    seo_setup_alt_text_analysis_pending_count();
 }
 
 // --- Page Names ---

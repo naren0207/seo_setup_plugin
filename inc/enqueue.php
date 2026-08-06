@@ -41,6 +41,16 @@ function seo_setup_enqueue_assets( $hook_suffix ) {
         true
     );
 
+    // Reuses SEOSetupAltTextAjax (localized below) and the seoSetupAltTextAjax()/
+    // seoSetupAltTextRestHeaders() helpers defined in generate-alt-text.js.
+    wp_enqueue_script(
+        'seo-setup-analyze-alt-text',
+        plugins_url( 'assets/js/analyze-alt-text.js', __DIR__ ),
+        array( 'jquery', 'seo-setup-script', 'seo-setup-generate-alt-text' ),
+        '1.0.0',
+        true
+    );
+
     // REST API base URL for our plugin endpoints
     $rest_base = esc_url_raw( rest_url( 'seo-setup/v1' ) );
 
