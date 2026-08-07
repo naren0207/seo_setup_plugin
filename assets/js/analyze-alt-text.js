@@ -14,7 +14,8 @@ var seoSetupAltTextAnalysisRoutes = {
     'seo_setup_alt_text_analysis_start_audit':   '/alt-text-analysis/start-audit',
     'seo_setup_alt_text_analysis_process_batch': '/alt-text-analysis/process-batch',
     'seo_setup_alt_text_analysis_fix':           '/alt-text-analysis/fix',
-    'seo_setup_alt_text_analysis_pending_count': '/alt-text-analysis/pending-count'
+    'seo_setup_alt_text_analysis_pending_count': '/alt-text-analysis/pending-count',
+    'seo_setup_alt_text_analysis_send_report':   '/alt-text-analysis/send-report'
 };
 
 function seoSetupAltTextAnalysisRestUrl(action) {
@@ -34,10 +35,42 @@ jQuery(document).ready(function ($) {
     var $resultsTable   = $('#seo-setup-analyze-alt-text-table');
     var $fixResults     = $('#seo-setup-fix-alt-text-results');
 
-    var runningSent       = 0;
-    var runningSuitable   = 0;
-    var runningUnsuitable = 0;
-    var unsuitableItems   = [];
+    var runningSent            = 0;
+    var runningSuitable        = 0;
+    var runningUnsuitable      = 0;
+    var runningPromptTokens    = 0;
+    var runningCandidateTokens = 0;
+    var unsuitableItems        = [];
+    var analyzedItems          = [];
+
+    // Sends one combined usage report for this session's activity — including
+    // full per-image request/response detail from this session's Analyze
+    // run(s) — then resets the session state so a later standalone Fix click
+    // (without a fresh Analyze) doesn't re-report this session's scan data again.
+    function sendUsageReport(imagesFixed) {
+        seoSetupAltTextAjax({
+            url: seoSetupAltTextAnalysisRestUrl('seo_setup_alt_text_analysis_send_report'),
+            method: 'POST',
+            dataType: 'json',
+            contentType: 'application/json',
+            headers: seoSetupAltTextRestHeaders(),
+            data: JSON.stringify({
+                images_scanned: runningSent,
+                issues_identified: runningUnsuitable,
+                images_fixed: imagesFixed,
+                prompt_tokens: runningPromptTokens,
+                candidate_tokens: runningCandidateTokens,
+                items: analyzedItems
+            })
+        });
+
+        runningSent = 0;
+        runningSuitable = 0;
+        runningUnsuitable = 0;
+        runningPromptTokens = 0;
+        runningCandidateTokens = 0;
+        analyzedItems = [];
+    }
 
     function escapeHtml(str) {
         return $('<div>').text(str == null ? '' : str).html();
@@ -106,7 +139,10 @@ jQuery(document).ready(function ($) {
         runningSent = 0;
         runningSuitable = 0;
         runningUnsuitable = 0;
+        runningPromptTokens = 0;
+        runningCandidateTokens = 0;
         unsuitableItems = [];
+        analyzedItems = [];
 
         renderSummary();
         $resultsTable.html('');
@@ -156,7 +192,10 @@ jQuery(document).ready(function ($) {
                                 runningSent += batchItems.length;
                                 runningSuitable += response.data.suitable_count || 0;
                                 runningUnsuitable += response.data.unsuitable_count || 0;
+                                runningPromptTokens += response.data.prompt_tokens || 0;
+                                runningCandidateTokens += response.data.candidate_tokens || 0;
                                 unsuitableItems = unsuitableItems.concat(response.data.unsuitable_items || []);
+                                analyzedItems = analyzedItems.concat(response.data.analyzed_items || []);
                                 renderSummary();
                                 renderResultsTable();
                             }
@@ -168,6 +207,12 @@ jQuery(document).ready(function ($) {
                                 $progress.html('<p>Analysis complete.</p>');
                                 $analyzeButton.prop('disabled', false);
                                 refreshPendingCount();
+
+                                // Nothing to fix from this session — report now,
+                                // since there won't be a Fix click to piggyback on.
+                                if (runningUnsuitable === 0) {
+                                    sendUsageReport(0);
+                                }
                             }
                         },
                         error: function () {
@@ -218,6 +263,14 @@ jQuery(document).ready(function ($) {
 
                     totalFixed += response.data.fixed_count || 0;
 
+                    (response.data.fixed_items || []).forEach(function (fixedItem) {
+                        analyzedItems.forEach(function (analyzedItem) {
+                            if (analyzedItem.attachment_id === fixedItem.attachment_id) {
+                                analyzedItem.fixed = true;
+                            }
+                        });
+                    });
+
                     if (response.data.has_more) {
                         $fixResults.html('<p>Fixed ' + totalFixed + ' image(s) so far, ' + response.data.remaining_count + ' remaining...</p>');
                         setTimeout(processFixBatch, 300);
@@ -226,6 +279,7 @@ jQuery(document).ready(function ($) {
 
                     $fixResults.html('<p>Done — fixed ' + totalFixed + ' image(s).</p>');
                     $fixButton.prop('disabled', false).hide();
+                    sendUsageReport(totalFixed);
                 },
                 error: function () {
                     $fixResults.html('<p style="color:red;">AJAX error while applying fixes.</p>');

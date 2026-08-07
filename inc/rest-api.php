@@ -87,6 +87,12 @@ function seo_setup_register_rest_routes() {
         'permission_callback' => 'seo_setup_rest_permission_upload_files',
     ) );
 
+    register_rest_route( $namespace, '/alt-text-analysis/send-report', array(
+        'methods'             => 'POST',
+        'callback'            => 'seo_setup_rest_alt_text_analysis_send_report',
+        'permission_callback' => 'seo_setup_rest_permission_upload_files',
+    ) );
+
     // -----------------------------------------------------------------------
     // Page Names
     // -----------------------------------------------------------------------
@@ -407,6 +413,12 @@ function seo_setup_rest_alt_text_analysis_pending_count( $request ) {
     seo_setup_rest_populate_post( $request );
     add_filter( 'wp_doing_ajax', '__return_true' );
     seo_setup_alt_text_analysis_pending_count();
+}
+
+function seo_setup_rest_alt_text_analysis_send_report( $request ) {
+    seo_setup_rest_populate_post( $request );
+    add_filter( 'wp_doing_ajax', '__return_true' );
+    seo_setup_alt_text_analysis_send_report();
 }
 
 // --- Page Names ---

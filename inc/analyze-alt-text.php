@@ -36,6 +36,12 @@ if ( ! defined( 'SEO_SETUP_GEMINI_API_KEY' ) ) {
 define( 'SEO_SETUP_GEMINI_MODEL', 'gemini-2.5-flash' );
 define( 'SEO_SETUP_GEMINI_ENDPOINT', 'https://generativelanguage.googleapis.com/v1beta/models/' . SEO_SETUP_GEMINI_MODEL . ':generateContent' );
 
+// External usage-reporting endpoint (separate from the internal v6 LOGS system).
+// Reports token usage as returned by Gemini's own usageMetadata — no cost
+// figure is computed on our side, since Gemini's API never returns a dollar
+// amount, only token counts.
+define( 'SEO_SETUP_IMAGE_ALT_ANALYSIS_LOGS_ENDPOINT', 'https://stagingseo.vsplash.com/api/image-alt-analysis-logs' );
+
 // ============================================================================
 // Table creation
 // ============================================================================
@@ -172,7 +178,7 @@ function seo_setup_get_eligible_images_for_analysis() {
  * and get a replacement if not (or a decorative flag if the image carries
  * no informational content).
  *
- * @return array|false  ['is_suitable' => bool, 'is_decorative' => bool, 'suggested_alt_text' => string] or false on failure.
+ * @return array|false  ['is_suitable' => bool, 'is_decorative' => bool, 'suggested_alt_text' => string, 'prompt_tokens' => int, 'candidate_tokens' => int] or false on failure.
  */
 function seo_setup_analyze_image_with_gemini( $img_url, $current_alt, $credentials ) {
     $api_url = $credentials['endpoint'];
@@ -259,6 +265,10 @@ function seo_setup_analyze_image_with_gemini( $img_url, $current_alt, $credentia
     $json = json_decode( $body, true );
     $text = isset( $json['candidates'][0]['content']['parts'][0]['text'] ) ? $json['candidates'][0]['content']['parts'][0]['text'] : '';
 
+    // Real usage as reported by Gemini itself — used for the external usage report.
+    $prompt_tokens    = isset( $json['usageMetadata']['promptTokenCount'] ) ? (int) $json['usageMetadata']['promptTokenCount'] : 0;
+    $candidate_tokens = isset( $json['usageMetadata']['candidatesTokenCount'] ) ? (int) $json['usageMetadata']['candidatesTokenCount'] : 0;
+
     if ( empty( $text ) ) {
         error_log( '[SEO Setup] Gemini alt text analysis: empty response text.' );
         return false;
@@ -284,6 +294,8 @@ function seo_setup_analyze_image_with_gemini( $img_url, $current_alt, $credentia
         'is_suitable'        => (bool) $parsed['is_suitable'],
         'is_decorative'      => ! empty( $parsed['is_decorative'] ),
         'suggested_alt_text' => $suggested,
+        'prompt_tokens'      => $prompt_tokens,
+        'candidate_tokens'   => $candidate_tokens,
     );
 }
 
@@ -332,9 +344,12 @@ function seo_setup_alt_text_analysis_process_batch() {
     global $wpdb;
     $table_name = $wpdb->prefix . 'seo_setup_alt_text_analysis';
 
-    $suitable_count   = 0;
-    $unsuitable_count = 0;
-    $unsuitable_items = array();
+    $suitable_count      = 0;
+    $unsuitable_count    = 0;
+    $unsuitable_items    = array();
+    $analyzed_items      = array();
+    $batch_prompt_tokens = 0;
+    $batch_candidate_tokens = 0;
 
     foreach ( $_POST['batch_data'] as $item ) {
         $attachment_id = isset( $item['attachment_id'] ) ? absint( $item['attachment_id'] ) : 0;
@@ -351,9 +366,25 @@ function seo_setup_alt_text_analysis_process_batch() {
             continue;
         }
 
+        $batch_prompt_tokens    += $verdict['prompt_tokens'];
+        $batch_candidate_tokens += $verdict['candidate_tokens'];
+
         $is_suitable        = $verdict['is_suitable'];
         $is_decorative      = $verdict['is_decorative'];
         $suggested_alt_text = $is_suitable ? '' : $verdict['suggested_alt_text'];
+
+        // Full per-image request/response detail, used only for the external
+        // usage report — kept separate from $unsuitable_items (UI table data).
+        $analyzed_items[] = array(
+            'attachment_id'      => $attachment_id,
+            'image_url'          => $image_url,
+            'current_alt_text'   => $current_alt,
+            'is_suitable'        => $is_suitable,
+            'is_decorative'      => $is_decorative,
+            'suggested_alt_text' => $suggested_alt_text,
+            'prompt_tokens'      => $verdict['prompt_tokens'],
+            'candidate_tokens'   => $verdict['candidate_tokens'],
+        );
 
         $wpdb->query( $wpdb->prepare(
             "INSERT INTO $table_name
@@ -397,9 +428,12 @@ function seo_setup_alt_text_analysis_process_batch() {
     }
 
     wp_send_json_success( array(
-        'suitable_count'   => $suitable_count,
-        'unsuitable_count' => $unsuitable_count,
-        'unsuitable_items' => $unsuitable_items,
+        'suitable_count'      => $suitable_count,
+        'unsuitable_count'    => $unsuitable_count,
+        'unsuitable_items'    => $unsuitable_items,
+        'analyzed_items'      => $analyzed_items,
+        'prompt_tokens'       => $batch_prompt_tokens,
+        'candidate_tokens'    => $batch_candidate_tokens,
     ) );
 }
 add_action( 'wp_ajax_seo_setup_alt_text_analysis_process_batch', 'seo_setup_alt_text_analysis_process_batch' );
@@ -523,6 +557,87 @@ function seo_setup_alt_text_analysis_pending_count() {
     wp_send_json_success( array( 'pending_count' => $pending_count ) );
 }
 add_action( 'wp_ajax_seo_setup_alt_text_analysis_pending_count', 'seo_setup_alt_text_analysis_pending_count' );
+
+/**
+ * Sends one combined usage report for this browser session's activity to the
+ * external image-alt-analysis-logs endpoint. Called by the client once per
+ * session: right after Fix finishes draining the pending backlog, or
+ * immediately after Analyze if it found nothing that needed fixing.
+ *
+ * Token counts are exactly what Gemini itself reported via usageMetadata —
+ * no cost figure is computed or estimated on our side.
+ */
+function seo_setup_alt_text_analysis_send_report() {
+    check_ajax_referer( 'seo_setup_alt_text_nonce', 'security' );
+
+    if ( ! current_user_can( 'upload_files' ) ) {
+        wp_send_json_error( array( 'message' => 'Unauthorized.' ) );
+    }
+
+    $images_scanned    = isset( $_POST['images_scanned'] ) ? absint( $_POST['images_scanned'] ) : 0;
+    $issues_identified = isset( $_POST['issues_identified'] ) ? absint( $_POST['issues_identified'] ) : 0;
+    $images_fixed      = isset( $_POST['images_fixed'] ) ? absint( $_POST['images_fixed'] ) : 0;
+    $prompt_tokens     = isset( $_POST['prompt_tokens'] ) ? absint( $_POST['prompt_tokens'] ) : 0;
+    $candidate_tokens  = isset( $_POST['candidate_tokens'] ) ? absint( $_POST['candidate_tokens'] ) : 0;
+
+    // Full per-image request/response detail for this session's Analyze run —
+    // everything Gemini was sent and returned, sanitized field-by-field (this
+    // arrives as a raw JSON-decoded array via the REST bridge, not $_POST
+    // superglobal magic-quoted input, so no wp_unslash() is needed here).
+    $raw_items = isset( $_POST['items'] ) && is_array( $_POST['items'] ) ? $_POST['items'] : array();
+    $items     = array();
+    foreach ( $raw_items as $raw_item ) {
+        $items[] = array(
+            'attachment_id'      => isset( $raw_item['attachment_id'] ) ? absint( $raw_item['attachment_id'] ) : 0,
+            'image_url'          => isset( $raw_item['image_url'] ) ? esc_url_raw( $raw_item['image_url'] ) : '',
+            'current_alt_text'   => isset( $raw_item['current_alt_text'] ) ? sanitize_text_field( $raw_item['current_alt_text'] ) : '',
+            'is_suitable'        => ! empty( $raw_item['is_suitable'] ),
+            'is_decorative'      => ! empty( $raw_item['is_decorative'] ),
+            'suggested_alt_text' => isset( $raw_item['suggested_alt_text'] ) ? sanitize_text_field( $raw_item['suggested_alt_text'] ) : '',
+            'fixed'              => ! empty( $raw_item['fixed'] ),
+            'prompt_tokens'      => isset( $raw_item['prompt_tokens'] ) ? absint( $raw_item['prompt_tokens'] ) : 0,
+            'candidate_tokens'   => isset( $raw_item['candidate_tokens'] ) ? absint( $raw_item['candidate_tokens'] ) : 0,
+        );
+    }
+
+    $pinfo = seo_setup_get_plugin_info();
+    $sinfo = seo_setup_get_site_user_info();
+
+    $payload = array(
+        'type'        => 'Image Analyzation From Alt Text Plugin',
+        'plugin-name' => $pinfo['name'],
+        'version'     => $pinfo['version'],
+        'website'     => $sinfo['website'],
+        'username'    => $sinfo['username'],
+        'date-time'   => seo_setup_get_current_ist_datetime(),
+        'data'        => array(
+            'images_scanned'                => $images_scanned,
+            'issues_identified'              => $issues_identified,
+            'images_fixed'                   => $images_fixed,
+            'request_tokens_total'           => $prompt_tokens,
+            'response_tokens_total'          => $candidate_tokens,
+            'avg_request_tokens_per_image'   => $images_scanned > 0 ? round( $prompt_tokens / $images_scanned, 2 ) : 0,
+            'avg_response_tokens_per_image'  => $images_scanned > 0 ? round( $candidate_tokens / $images_scanned, 2 ) : 0,
+            'items'                          => $items,
+        ),
+    );
+
+    // Fire-and-forget, same rationale as seo_setup_send_api_log(): reporting
+    // should never block or fail the actual Analyze/Fix UX.
+    $response = wp_remote_post( SEO_SETUP_IMAGE_ALT_ANALYSIS_LOGS_ENDPOINT, array(
+        'headers'  => array( 'Content-Type' => 'application/json' ),
+        'body'     => wp_json_encode( $payload ),
+        'timeout'  => 5,
+        'blocking' => false,
+    ) );
+
+    if ( is_wp_error( $response ) ) {
+        error_log( '[SEO Setup] Image alt analysis report send error: ' . $response->get_error_message() );
+    }
+
+    wp_send_json_success();
+}
+add_action( 'wp_ajax_seo_setup_alt_text_analysis_send_report', 'seo_setup_alt_text_analysis_send_report' );
 
 // ============================================================================
 // Logging (v6 LOGS API — same convention as inc/api-logger.php)
